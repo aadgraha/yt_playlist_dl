@@ -1,24 +1,21 @@
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 
-Future<void> downloadToStorage(String url) async {
+Future<void> downloadToStorage(String url, String mode) async {
   final dio = Dio();
   final baseUrl = 'http://127.0.0.1:8000';
-
-  // Step 1: request backend to download
   final response = await dio.get(
     "$baseUrl/download",
-    queryParameters: {"url": url},
+    queryParameters: {"url": url, 'mode': mode},
   );
 
-  final filename = response.data["file"];
+  final folder = response.data['folder'];
+  final fileNames = response.data["files"] as List;
 
-  // Step 2: get file URL
-  final fileUrl = "$baseUrl/file/$filename";
-
-  // Step 3: save to phone storage
+  for (final fileName in fileNames) {
+    final fileUrl = "$baseUrl/file/$folder/$fileName";
   final dir = await getExternalStorageDirectory();
-  final savePath = "${dir!.path}/$filename";
+  final savePath = "${dir!.path}/$fileName";
 
   await dio.download(
     fileUrl,
@@ -27,6 +24,6 @@ Future<void> downloadToStorage(String url) async {
       print("${(received / total * 100).toStringAsFixed(0)}%");
     },
   );
-
   print("Saved to: $savePath");
+  }
 }
