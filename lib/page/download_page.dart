@@ -48,7 +48,7 @@ class _DownloadPageState extends State<DownloadPage> {
               } else {
                 mode = 'video';
               }
-            await downloadToStorage(urlController.text, mode);
+            await downloadFiles(urlController.text,mode);
             });
             }),
             SizedBox(height: 12,),
@@ -60,13 +60,11 @@ class _DownloadPageState extends State<DownloadPage> {
             }),
             Expanded(child: 
             Watch((context) {
-              if (downloadItem.value == null) {return SizedBox.shrink();}
-              return ListView.builder(itemCount: downloadItem.value!.nameData.length,itemBuilder: (context, index) {
-                final title = downloadItem.value!.nameData[index].name;
-                return Watch((context) {
-                  final progress = downloadItem.value!.nameData[index].progress.value;
-                  return ListTile(title: Text(title), subtitle: LinearProgressIndicator(value: progress, minHeight: 2,),);
-                });
+              return ListView.builder(itemCount: downloadedFiles.value.length,itemBuilder: (context, index) {
+                final title = downloadedFiles.value[index].name;
+                final progress = downloadedFiles.value[index].progress;
+                final status = downloadedFiles.value[index].status;
+                return ListTile(title: Text('$title\n$status'), subtitle: LinearProgressIndicator(value: progress, minHeight: 2,),);
               });
             })
             )
