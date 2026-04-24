@@ -4,88 +4,66 @@ import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:yt_playlist_dl/model/download.dart';
+
 final baseUrl = 'http://127.0.0.1:8000';
-// Future<void> downloadToStorage(String url, String mode) async {
-//   try {
-//   isLoading.value = true;
-//   errorMessage.value = null;
-//   final response = await dio.get(
-//     "$baseUrl/download",
-//     queryParameters: {"url": url, 'mode': mode},
-//   );
-//   final data = response.data as Map<String, dynamic>;
-//   downloadItem.value = DownloadItem.fromJson(data);
-//   } catch (e) {
-//     errorMessage.value = e.toString();
-//   } finally {
-//     isLoading.value = false;
-//   }
-//   if (downloadItem.value != null) {
-//   for (final file in downloadItem.value!.nameData) {
-//     final folder = downloadItem.value!.id;
-//     final fileUrl = "$baseUrl/file/$folder/${file.name}";
-//   final dir = await getExternalStorageDirectory();
-//   final savePath = "${dir!.path}/${file.name}";
-//   await dio.download(
-//     fileUrl,
-//     savePath,
-//     onReceiveProgress: (received, total) {
-//       file.progress.value = received/total;
-//       print(received/total);
-//     },
-//   );
-//   }
-//   }
-// }
 
 Future<void> downloadFiles(String url, String mode) async {
   final dio = Dio();
   try {
-  isLoading.value = true;
-  errorMessage.value = null;
-  final response = await dio.get(
-    "$baseUrl/download",
-    queryParameters: {"url": url, 'mode': mode},
-  );
-  final data = response.data as Map<String, dynamic>;
-  await pollFiles(folderId:   data['folder'] as String);
+    isLoading.value = true;
+    errorMessage.value = null;
+    final response = await dio.get(
+      "$baseUrl/download",
+      queryParameters: {"url": url, 'mode': mode},
+    );
+    final data = response.data as Map<String, dynamic>;
+    await pollFiles(folderId: data['folder'] as String);
   } catch (e) {
     errorMessage.value = e.toString();
-     print(e);
     throw Exception();
   } finally {
     isLoading.value = false;
-    print(-1);
+  }
 }
-}
+
 Timer? pollTimer;
 
-Future<void> pollFiles({required String folderId}) async{
+Future<void> pollFiles({required String folderId}) async {
   final dio = Dio();
   pollTimer?.cancel();
-  print('1');
   pollTimer = Timer.periodic(Duration(seconds: 1), (_) async {
     final res = await dio.get("$baseUrl/status/$folderId");
-    print(res.data);
     final data = res.data as Map<String, dynamic>;
-    updateProgress((data['files'] as List).map((json) => DownloadedFile.fromJson(json as Map<String, dynamic>)).toList());
+    final updatedData = (data['files'] as List)
+        .map((json) => DownloadedFile.fromJson(json as Map<String, dynamic>))
+        .toList();
+    final swappedData = swapByMatch<DownloadedFile>(
+      updatedData,
+      downloadedSet,
+      (e1, e2) => e1.name == e2.name,
+    );
+    updateProgress(folderId, swappedData);
     if (data["status"] == "completed" || data["status"] == "error") {
       pollTimer?.cancel();
-      print('2');
     }
   });
 }
 
-void updateProgress(List<DownloadedFile> data) {
-  print('3');
-  downloadedFiles.value = data;
+void updateProgress(String folderId, List<DownloadedFile> files) {
+  final updated = files.map((e) {
+    if (e.status == 'finished' && !downloadedSet.contains(e)) {
+      downloadFile(folderId, e);
+    }
+    return DownloadedFile(name: e.name, status: e.status, progress: e.progress);
+  }).toList();
+  downloadedFiles.value = updated;
 }
 
 class DownloadedFile {
   final String name;
   final double progress;
   final String status;
-
+  final progressDownload = Signal<double>(0.0);
   DownloadedFile({
     required this.name,
     required this.progress,
@@ -101,4 +79,46 @@ class DownloadedFile {
   }
 }
 
+Future<void> downloadFile(String folderId, DownloadedFile file) async {
+  try {
+    final dio = Dio();
+    final fileUrl = "$baseUrl/file/$folderId/${file.name}";
+    final dir = await getExternalStorageDirectory();
+    final savePath = "${dir!.path}/${file.name}";
+    await dio.download(
+      fileUrl,
+      savePath,
+      onReceiveProgress: (received, total) {
+        file.progressDownload.value =
+            (0.5 * file.progress) + (0.5 * (received / total));
+        print('${(0.5 * file.progress)} + ${(0.5 * (received / total))}');
+      },
+    );
+    downloadedSet.add(file);
+    print(downloadedSet.map((e) => e.progressDownload.value));
+  } catch (e) {
+    throw Exception(e);
+  }
+}
+
 final downloadedFiles = Signal<List<DownloadedFile>>([]);
+final downloadedSet = <DownloadedFile>{};
+
+List<T> swapByMatch<T>(
+  List<T> list,
+  Set<T> setList,
+  bool Function(T listObj, T setObj) matcher,
+) {
+  List<T> result = List.from(list);
+
+  for (int i = 0; i < result.length; i++) {
+    final match = setList
+        .where((setObj) => matcher(result[i], setObj))
+        .firstOrNull;
+    if (match != null) {
+      result[i] = match;
+    }
+  }
+
+  return result;
+}
